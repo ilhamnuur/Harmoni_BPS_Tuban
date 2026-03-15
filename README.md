@@ -96,12 +96,12 @@ php artisan key:generate
 Buka file `.env` lalu ubah konfigurasi database:
 
 ```
-DB_CONNECTION=mysql
+DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=harmoni_bps
-DB_USERNAME=root
-DB_PASSWORD=
+DB_PORT=5432
+DB_DATABASE=harmoni
+DB_USERNAME=postgres
+DB_PASSWORD=(password postgres mu)
 ```
 
 Buat database baru di MySQL dengan nama:
@@ -154,7 +154,14 @@ npm run dev
 ### Admin
 
 ```
-username : andhie_surya
+username : admin
+password : password123
+```
+
+### kepala
+
+```
+username : kepala.bps
 password : password123
 ```
 
@@ -162,14 +169,14 @@ password : password123
 
 ```
 username : dua nama depan masing masing katim
-password : password
+password : password123
 ```
 
 ### Pegawai
 
 ```
 username : dua nama depan masing masing pegawai
-password : password
+password : password123
 ```
 
 ---
