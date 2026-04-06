@@ -31,6 +31,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::get('/super-access', [SuperAccessController::class, 'index'])->name('super.access.index');
     Route::get('/panduan', [DashboardController::class, 'panduanIndex'])->name('panduan.index');
+    Route::get('/assignment/{id}/download-spt', [AssignmentController::class, 'downloadSPT'])->name('assignment.download-spt');
 
     Route::prefix('history')->group(function () {
     Route::get('/', [HistoryController::class, 'historyIndex'])->name('history.index');
@@ -74,6 +75,9 @@ Route::middleware('auth')->group(function () {
             Route::put('/{id}', [AssignmentController::class, 'assignmentUpdate'])->name('assignment.update');
             Route::delete('/{id}', [AssignmentController::class, 'assignmentDestroy'])->name('assignment.destroy');
             Route::get('/check-availability', [AssignmentController::class, 'checkAvailability'])->name('assignment.check-availability');
+            Route::get('/approvals', [AssignmentController::class, 'approvalIndex'])->name('assignment.approvals.index');
+            Route::post('/approvals/{id}/action', [AssignmentController::class, 'approvalAction'])->name('assignment.approvals.action');
+            
         });
     });
 
@@ -140,6 +144,8 @@ Route::middleware('auth')->group(function () {
             Route::get('/', [AbsensiController::class, 'absensiIndex'])->name('absensi.index');
             Route::post('/store', [AbsensiController::class, 'absensiStore'])->name('absensi.store');
             Route::post('/absensi/import', [AbsensiController::class, 'absensiImport'])->name('absensi.import');
+            Route::put('/absensi/{id}', [AbsensiController::class, 'update'])->name('absensi.update');
+            Route::delete('/absensi/{id}', [AbsensiController::class, 'destroy'])->name('absensi.destroy');
         });
     });
 });

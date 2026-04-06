@@ -21,13 +21,20 @@ class TaskController extends Controller
 {
     $user = auth()->user();
     
-    // Kita hapus filter 'event_date' <= $today agar tugas muncul seketika setelah di-assign
     $tugas = Agenda::with(['activityType', 'creator'])
         ->where('assigned_to', $user->id)
-        ->where('activity_type_id', 1) // Khusus Tugas Lapangan
+        ->where('activity_type_id', 1)
         ->where('status_laporan', 'Pending')
-        // Filter tanggal dihapus: "Begitu di-plot, langsung muncul"
-        ->orderBy('event_date', 'asc') // Urutkan dari yang paling dekat tanggalnya
+        // TAMBAHKAN LOGIKA INI:
+        ->where(function($query) {
+            $query->where('mode_surat', 'upload') // Kalau upload PDF, boleh langsung muncul
+                  ->orWhere(function($q) {
+                      // Kalau ketik surat (generate), WAJIB sudah Approved
+                      $q->where('mode_surat', 'generate')
+                        ->where('status_approval', 'Approved');
+                  });
+        })
+        ->orderBy('event_date', 'asc')
         ->get();
 
     return view('task.index', compact('tugas'));
@@ -73,40 +80,60 @@ class TaskController extends Controller
     */
     public function taskStore(Request $request, $id) 
 {
-    $user = auth()->id();
-    // Pastikan agenda memang milik user yang login dan bertipe tugas lapangan
-    $agenda = Agenda::where('id', $id)->where('assigned_to', $user)->firstOrFail();
+    $userId = auth()->id();
+    // Pastikan agenda memang milik user yang login
+    $agenda = Agenda::where('id', $id)->where('assigned_to', $userId)->firstOrFail();
     
     $request->validate([
         'kecamatan' => ['required', 'string'],
         'desa' => ['required', 'string'],
-        'tanggal_pelaksanaan' => ['required', 'date'],
+        'tanggal_pelaksanaan' => ['required', 'date'], // Ini kolom yang kita validasi
         'responden' => ['required', 'string', 'max:255'],
         'aktivitas' => ['required', 'string'],
         'permasalahan' => ['required', 'string'],
         'solusi_antisipasi' => ['required', 'string'],
-        'fotos' => ['required', 'array', 'min:1', 'max:6'], // Minimal 1, maksimal 6 foto
-        'fotos.*' => ['image', 'mimes:jpeg,png,jpg', 'max:10240'], // Max 10MB per foto
-    ], [
-        'fotos.required' => 'Wajib mengunggah minimal 1 foto dokumentasi.',
-        'fotos.max' => 'Maksimal unggah 6 foto saja.',
-        'fotos.*.max' => 'Ukuran setiap foto tidak boleh lebih dari 10MB.'
+        'fotos' => ['required', 'array', 'min:1', 'max:6'],
+        'fotos.*' => ['image', 'mimes:jpeg,png,jpg', 'max:10240'],
     ]);
 
     try {
+        $tglPilihan = $request->tanggal_pelaksanaan;
+
+        // --- 1. VALIDASI SERVER-SIDE: CEK CUTI ---
+        $isCuti = \App\Models\Absensi::where('user_id', $userId)
+                    ->where('status', 'Cuti')
+                    ->where('start_date', '<=', $tglPilihan)
+                    ->where('end_date', '>=', $tglPilihan)
+                    ->exists();
+
+        if ($isCuti) {
+            return back()->withInput()->with('error', 'Gagal! Anda tidak dapat menginput laporan karena Anda sedang CUTI pada tanggal tersebut.');
+        }
+
+        // --- 2. VALIDASI SERVER-SIDE: CEK TANGGAL BENTROK ---
+        // Kita cek di tabel 'agendas', apakah user ini sudah punya agenda LAIN 
+        // yang 'tanggal_pelaksanaan'-nya sama dengan yang diinput sekarang.
+        // --- 2. VALIDASI SERVER-SIDE: CEK TANGGAL BENTROK ---
+        $isBentrok = Agenda::where('assigned_to', $userId)
+                        ->where('id', '!=', $id) 
+                        ->where('tanggal_pelaksanaan', $tglPilihan)
+                        ->where('status_laporan', 'Selesai') // TAMBAHKAN INI
+                        ->exists();
+
+        if ($isBentrok) {
+            return back()->withInput()->with('error', 'Gagal! Anda sudah memiliki laporan tugas lain di tanggal yang sama. Silakan pilih tanggal lain.');
+        }
+
         DB::beginTransaction();
 
-        // 1. LOGIKA KUNCI: Gabung Desa & Kecamatan ke dalam kolom 'location'
-        // Format: "Desa [Nama Desa], Kec. [Nama Kecamatan]"
+        // Logika Lokasi
         $lokasiLengkap = "Desa " . $request->desa . ", Kec. " . $request->kecamatan;
 
-        // 2. Upload Foto Dokumentasi
+        // Upload Foto
         if ($request->hasFile('fotos')) {
             foreach ($request->file('fotos') as $foto) {
                 if ($foto->isValid()) {
                     $path = $foto->store('dokumentasi_tugas', 'public');
-                    
-                    // Simpan ke tabel relasi AgendaPhoto
                     \App\Models\AgendaPhoto::create([
                         'agenda_id' => $agenda->id, 
                         'photo_path' => $path
@@ -115,10 +142,10 @@ class TaskController extends Controller
             }
         }
 
-        // 3. Update Data Agenda Utama
+        // Update Data Agenda
         $agenda->update([
-            'location' => $lokasiLengkap, // Menyimpan format gabungan ke kolom location
-            'tanggal_pelaksanaan' => $request->tanggal_pelaksanaan, // Pastikan nama kolom di DB sesuai (tanggal_riil / tanggal_pelaksanaan)
+            'location' => $lokasiLengkap,
+            'tanggal_pelaksanaan' => $tglPilihan,
             'responden' => $request->responden,
             'aktivitas' => $request->aktivitas,
             'permasalahan' => $request->permasalahan,
@@ -128,11 +155,10 @@ class TaskController extends Controller
         ]);
 
         DB::commit();
-        return redirect()->route('history.index')->with('success', 'Laporan tugas berhasil dikirim dan diarsipkan!');
+        return redirect()->route('history.index')->with('success', 'Laporan tugas berhasil dikirim!');
 
     } catch (\Exception $e) {
         DB::rollback();
-        // Log error bisa ditambahkan di sini jika perlu: \Log::error($e->getMessage());
         return back()->withInput()->with('error', 'Gagal menyimpan laporan: ' . $e->getMessage());
     }
 }

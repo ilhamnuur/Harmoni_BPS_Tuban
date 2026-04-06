@@ -17,73 +17,81 @@ class ProfileController extends Controller
     }
 
     public function update(Request $request)
-    {
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
+{
+    /** @var \App\Models\User $user */
+    $user = Auth::user();
 
-        // --- 1. IDENTIFIKASI PEJABAT ASLI ---
-        // Kita cek NIP atau Username Pejabat asli dari daftar Seeder.
-        // Ini daftar username yang di Seeder kamu adalah Katim/Kepala.
-        $daftarPejabat = [
-            'kepala.bps', 'ketua.tim', 'dodik.hendarto', 'respati.yekti', 
-            'umdatul.ummah', 'ika.rahmawati', 'arif.suroso', 'triana.puji', 
-            'yudhi.prasetyono', 'wicaksono'
-        ];
+    // --- 1. IDENTIFIKASI PEJABAT ASLI ---
+    $daftarPejabat = [
+        'kepala.bps', 'ketua.tim', 'dodik.hendarto', 'respati.yekti', 
+        'umdatul.ummah', 'ika.rahmawati', 'arif.suroso', 'triana.puji', 
+        'yudhi.prasetyono', 'wicaksono'
+    ];
 
-        // Cek apakah user yang login ini termasuk dalam daftar pejabat asli
-        $isPejabatAsli = in_array($user->username, $daftarPejabat);
+    $isPejabatAsli = in_array($user->username, $daftarPejabat);
 
-        // --- 2. LOGIKA ROLE YANG DIIZINKAN ---
-        $allowedRoles = ['Pegawai'];
+    // --- 2. LOGIKA ROLE YANG DIIZINKAN ---
+    $allowedRoles = ['Pegawai'];
 
-        // HANYA jika dia Pejabat Asli DAN menyalakan Akses Super (atau sedang menjabat), 
-        // baru boleh ganti role.
-        if ($isPejabatAsli && ($request->has_super_access == 1 || $user->role !== 'Pegawai')) {
-            if ($user->team_id == 8) {
-                $allowedRoles = ['Kepala', 'Pegawai'];
-            } else {
-                $allowedRoles = ['Katim', 'Pegawai'];
-            }
-        } 
-        
-        // Admin selalu Admin
-        if ($user->role === 'Admin') {
-            $allowedRoles = ['Admin'];
+    if ($isPejabatAsli && ($request->has_super_access == 1 || $user->role !== 'Pegawai')) {
+        if ($user->team_id == 8) {
+            $allowedRoles = ['Kepala', 'Pegawai'];
+        } else {
+            $allowedRoles = ['Katim', 'Pegawai'];
         }
-
-        $request->validate([
-            'nama_lengkap'     => 'required|string|max:255',
-            'username'         => ['required', 'string', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'role'             => ['required', Rule::in($allowedRoles)],
-            'password'         => 'nullable|min:8|confirmed',
-        ]);
-
-        // --- 3. UPDATE DATA DASAR ---
-        $user->nama_lengkap = $request->nama_lengkap;
-        $user->username = $request->username;
-
-        // --- 4. LOGIKA AKSES SUPER (ANTI-NULL & TIKET BALIK) ---
-        $hasSuper = $request->input('has_super_access', 0);
-
-        // Jika dia Pejabat dan memilih balik jadi Kepala/Katim, PAKSA Akses Super aktif (1)
-        if ($request->role === 'Kepala' || $request->role === 'Katim') {
-            $hasSuper = 1;
-        }
-
-        // Simpan sebagai integer agar Postgres tidak error
-        $user->has_super_access = (int) $hasSuper;
-
-        // --- 5. UPDATE ROLE & PASSWORD ---
-        if ($user->role !== 'Admin') {
-            $user->role = $request->role;
-        }
-
-        if ($request->filled('password')) {
-            $user->password = Hash::make($request->password);
-        }
-
-        $user->save();
-
-        return back()->with('success', 'Profil berhasil diperbarui!');
+    } 
+    
+    if ($user->role === 'Admin') {
+        $allowedRoles = ['Admin'];
     }
+
+    // --- 3. VALIDASI (DITAMBAHKAN VALIDASI SIGNATURE) ---
+    $request->validate([
+        'nama_lengkap'     => 'required|string|max:255',
+        'username'         => ['required', 'string', 'max:255', \Illuminate\Validation\Rule::unique('users')->ignore($user->id)],
+        'role'             => ['required', \Illuminate\Validation\Rule::in($allowedRoles)],
+        'password'         => 'nullable|min:8|confirmed',
+        'signature'        => 'nullable|image|mimes:png|max:2048', // Khusus PNG agar transparan, max 2MB
+    ]);
+
+    // --- 4. UPDATE DATA DASAR ---
+    $user->nama_lengkap = $request->nama_lengkap;
+    $user->username = $request->username;
+
+    // --- 5. LOGIKA UPLOAD TANDA TANGAN (KHUSUS KEPALA & KATIM) ---
+    if ($request->hasFile('signature')) {
+        // Hanya izinkan jika role saat ini atau role baru adalah Kepala/Katim
+        if (in_array($request->role, ['Kepala', 'Katim'])) {
+            
+            // Hapus TTD lama jika ada di storage
+            if ($user->signature && \Storage::disk('public')->exists($user->signature)) {
+                \Storage::disk('public')->delete($user->signature);
+            }
+
+            // Simpan TTD baru ke folder 'signatures'
+            $path = $request->file('signature')->store('signatures', 'public');
+            $user->signature = $path;
+        }
+    }
+
+    // --- 6. LOGIKA AKSES SUPER ---
+    $hasSuper = $request->input('has_super_access', 0);
+    if ($request->role === 'Kepala' || $request->role === 'Katim') {
+        $hasSuper = 1;
+    }
+    $user->has_super_access = (int) $hasSuper;
+
+    // --- 7. UPDATE ROLE & PASSWORD ---
+    if ($user->role !== 'Admin') {
+        $user->role = $request->role;
+    }
+
+    if ($request->filled('password')) {
+        $user->password = \Hash::make($request->password);
+    }
+
+    $user->save();
+
+    return back()->with('success', 'Profil dan Tanda Tangan berhasil diperbarui!');
+}
 }

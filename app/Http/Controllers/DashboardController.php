@@ -33,27 +33,29 @@ class DashboardController extends Controller
         'list_tim'  => $list_tim,
     ];
 
-    // --- 3. LOGIKA TOP TEAMS ---
+        // --- 3. LOGIKA TOP TEAMS (DIBENAHI) ---
     $data['top_teams'] = Team::where('nama_tim', '!=', 'Kepala BPS')
         ->withCount(['agendas' => function($q) use ($bulan, $tahun) {
+            // Langsung filter ke kolom team_id di tabel agendas, bukan lewat user
             $q->whereMonth('event_date', $bulan)
-              ->whereYear('event_date', $tahun);
+            ->whereYear('event_date', $tahun);
         }])
         ->orderBy('agendas_count', 'desc')
         ->take(7)
         ->get();
 
-    // --- 4. LOGIKA TREN BULANAN ---
-    $monthly_stats = [];
-    for ($m = 1; $m <= 12; $m++) {
-        $monthly_stats[$m] = Agenda::whereYear('event_date', $tahun)
-            ->whereMonth('event_date', $m)
-            ->when($filterTim, function($q) use ($filterTim) {
-                $q->whereHas('assignee', fn($sq) => $sq->where('team_id', $filterTim));
-            })
-            ->count();
-    }
-    $data['monthly_stats'] = $monthly_stats;
+    // --- 4. LOGIKA TREN BULANAN (DIBENAHI) ---
+$monthly_stats = [];
+for ($m = 1; $m <= 12; $m++) {
+    $monthly_stats[$m] = Agenda::whereYear('event_date', $tahun)
+        ->whereMonth('event_date', $m)
+        ->when($filterTim, function($q) use ($filterTim) {
+            // LANGSUNG TEMBAK KE KOLOM team_id DI AGENDAS
+            $q->where('team_id', $filterTim);
+        })
+        ->count();
+}
+$data['monthly_stats'] = $monthly_stats;
 
     // --- 5. LOGIKA STATISTIK CARDS (DIBENAHI TOTAL) ---
     $agendaQuery = Agenda::whereMonth('event_date', $bulan)->whereYear('event_date', $tahun);
@@ -86,21 +88,22 @@ class DashboardController extends Controller
         $data['tugas_selesai'] = $katimStats->selesai;
     }
     else {
-        // Kepala atau Admin
-        $userQuery = User::where('role', '!=', 'Admin');
-        
-        if ($filterTim) {
-            $userQuery->where('team_id', $filterTim);
-            $agendaQuery->whereHas('assignee', fn($q) => $q->where('team_id', $filterTim));
-        }
-
-        $data['total_pegawai'] = $userQuery->count();
-        $stats = $agendaQuery->selectRaw("COUNT(*) as total, COUNT(CASE WHEN status_laporan = 'Selesai' THEN 1 END) as selesai")
-            ->first();
-        
-        $data['total_agenda']  = $stats->total;
-        $data['tugas_selesai'] = $stats->selesai;
+    // Kepala atau Admin
+    $userQuery = User::where('role', '!=', 'Admin');
+    
+    if ($filterTim) {
+        $userQuery->where('team_id', $filterTim);
+        // GANTI INI: Jangan pakai whereHas assignee
+        $agendaQuery->where('team_id', $filterTim); 
     }
+
+    $data['total_pegawai'] = $userQuery->count();
+    $stats = $agendaQuery->selectRaw("COUNT(*) as total, COUNT(CASE WHEN status_laporan = 'Selesai' THEN 1 END) as selesai")
+        ->first();
+    
+    $data['total_agenda']  = $stats->total;
+    $data['tugas_selesai'] = $stats->selesai;
+}
 
     // --- 6. QUERY TABEL AGENDA TERKINI ---
     $agenda_terbaru = Agenda::with(['assignee', 'activityType'])

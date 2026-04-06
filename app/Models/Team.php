@@ -12,25 +12,17 @@ class Team extends Model
     protected $fillable = ['nama_tim'];
 
     /**
-     * Relasi ke Agenda (Tugas yang dibuat oleh anggota tim ini)
+     * INI YANG PALING PENTING:
+     * Menghitung tugas berdasarkan label 'team_id' di tabel AGENDAS.
+     * Tidak peduli siapa yang ngerjain, angkanya masuk ke tim yang punya hajat.
      */
     public function agendas()
     {
-        // Menghubungkan Team -> User (Creator) -> Agenda
-        // Jika di tabel agendas ada kolom user_id yang merujuk ke tabel users, 
-        // dan di tabel users ada team_id yang merujuk ke tabel teams.
-        return $this->hasManyThrough(
-            Agenda::class, 
-            User::class, 
-            'team_id', // Foreign key di tabel users
-            'user_id', // Foreign key di tabel agendas
-            'id',      // Local key di tabel teams
-            'id'       // Local key di tabel users
-        );
+        return $this->hasMany(Agenda::class, 'team_id');
     }
 
     /**
-     * Relasi ke User (Anggota Tim)
+     * Relasi ke User (Daftar anggota tetap di tim ini)
      */
     public function members()
     {

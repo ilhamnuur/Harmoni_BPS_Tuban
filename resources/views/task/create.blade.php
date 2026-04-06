@@ -1,138 +1,151 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container-fluid px-4">
+<style>
+    /* Merah tegas untuk bintang required */
+    .text-danger { color: #dc3545 !important; font-weight: bold; }
+    .form-label span.required { color: #dc3545; margin-left: 2px; }
+    /* Warna Biru BPS untuk header dan button */
+    .bg-bps-blue { background: linear-gradient(135deg, #0058a8 0%, #007bff 100%); }
+    .btn-bps-primary { background: #0058a8; color: white; transition: 0.3s; border: none; }
+    .btn-bps-primary:hover { background: #004481; color: white; transform: translateY(-2px); }
+</style>
+
+<div class="container-fluid">
+    @php
+        // 1. Pecah string Lokasi
+        $currentLocation = $agenda->location;
+        $currentDesa = '';
+        $currentKec = '';
+        if (str_contains($currentLocation, ', Kec. ')) {
+            $parts = explode(', Kec. ', $currentLocation);
+            $currentKec = trim($parts[1] ?? '');
+            $currentDesa = trim(str_replace('Desa ', '', $parts[0] ?? ''));
+        }
+
+        // 2. LOGIKA TANGGAL PELAKSANAAN
+        $tanggalTerdeteksi = $agenda->tanggal_pelaksanaan 
+                             ?? ($agenda->event_date 
+                             ?? now()->format('Y-m-d'));
+
+        $valTanggal = \Carbon\Carbon::parse($tanggalTerdeteksi)->format('Y-m-d');
+
+        // 3. DATA VALIDASI UNTUK JS
+        $userCuti = \App\Models\Absensi::where('user_id', Auth::id())
+                ->whereIn('status', ['CT', 'CST1']) // Gunakan whereIn untuk menangkap semua jenis cuti
+                ->get(['start_date', 'end_date', 'status']);
+    
+        $laporanTerpakai = \App\Models\Agenda::where('assigned_to', Auth::id())
+                ->where('id', '!=', $agenda->id) 
+                ->whereNotNull('tanggal_pelaksanaan')
+                ->where('status_laporan', 'Selesai')
+                ->pluck('tanggal_pelaksanaan')
+                ->toArray();
+    @endphp
+
     <div class="row justify-content-center">
         <div class="col-md-11 mt-4">
-            {{-- Header Form --}}
+            {{-- Header --}}
             <div class="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden">
-                <div class="bg-primary p-3 d-flex align-items-center justify-content-between">
+                <div class="bg-bps-blue p-3 d-flex align-items-center justify-content-between">
                     <div class="d-flex align-items-center">
-                        <div class="bg-white bg-opacity-25 p-2 rounded-3 me-3">
-                            <i class="fas fa-file-signature text-white fa-lg"></i>
+                        <div class="bg-white bg-opacity-25 p-2 rounded-3 me-3 text-white">
+                            <i class="fas fa-file-signature fa-lg"></i>
                         </div>
                         <div>
-                            <h5 class="text-white fw-bold mb-0">Form Laporan Pengawasan Lapangan</h5>
-                            <small class="text-white text-opacity-75">Silakan lengkapi detail lokasi dan hasil pengawasan</small>
+                            <h5 class="text-white fw-bold mb-0">Input Laporan Pengawasan Lapangan</h5>
+                            <small class="text-white text-opacity-75">Silakan lengkapi data hasil temuan Anda di lapangan</small>
                         </div>
                     </div>
-                    <span class="badge bg-white text-primary rounded-pill px-3 shadow-sm">ID AGENDA: #{{ $agenda->id }}</span>
+                    <span class="badge bg-white text-primary rounded-pill px-3 shadow-sm fw-bold">FORM LAPORAN</span>
                 </div>
             </div>
 
-            @if ($errors->any())
-                <div class="alert alert-danger border-0 shadow-sm rounded-4 mb-4">
-                    <ul class="mb-0">
-                        @foreach ($errors->all() as $error)
-                            <li><i class="fas fa-exclamation-triangle me-2"></i>{{ $error }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            @endif
-
-            <form action="{{ route('task.store', $agenda->id) }}" method="POST" enctype="multipart/form-data">
+            {{-- Pastikan Route-nya ke TASK STORE bukan HISTORY UPDATE jika ini input baru --}}
+            <form id="formLaporan" action="{{ route('task.store', $agenda->id) }}" method="POST" enctype="multipart/form-data">
                 @csrf
+
                 <div class="row">
-                    {{-- SISI KIRI: INFO PENUGASAN, WILAYAH & WAKTU --}}
+                    {{-- SISI KIRI --}}
                     <div class="col-lg-5">
-                        {{-- CARD 1: INFO PENUGASAN --}}
                         <div class="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-light">
-                            <h6 class="fw-bold mb-3 text-muted border-bottom pb-2 text-uppercase" style="font-size: 0.75rem; letter-spacing: 1px;">
-                                <i class="fas fa-info-circle me-2"></i>Informasi Penugasan
-                            </h6>
+                            <h6 class="fw-bold mb-3 text-muted border-bottom pb-2"><i class="fas fa-lock me-2"></i>Informasi Baku</h6>
                             <div class="mb-3">
                                 <label class="form-label small fw-bold text-muted text-uppercase">Nama Kegiatan</label>
-                                <textarea class="form-control border-0 bg-white fw-bold rounded-3" rows="2" readonly style="resize: none; font-size: 0.9rem;">{{ $agenda->title }}</textarea>
+                                <textarea class="form-control border-0 bg-white fw-bold rounded-3" rows="2" readonly style="resize: none;">{{ $agenda->title }}</textarea>
                             </div>
                             <div class="mb-0">
                                 <label class="form-label small fw-bold text-muted text-uppercase">Nomor Surat Tugas</label>
-                                <input type="text" class="form-control border-0 bg-white fw-bold rounded-3 text-primary" 
-                                       value="{{ $agenda->nomor_surat_tugas }}" readonly>
+                                <input type="text" class="form-control border-0 bg-white fw-bold rounded-3 text-primary" value="{{ $agenda->nomor_surat_tugas ?? '-' }}" readonly>
                             </div>
                         </div>
 
-                        {{-- CARD 2: LOKASI --}}
                         <div class="card border-0 shadow-sm rounded-4 p-4 mb-4 border-start border-4 border-primary">
                             <h6 class="fw-bold mb-3 text-primary"><i class="fas fa-map-marked-alt me-2"></i>Lokasi Pengawasan</h6>
-                            
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-muted text-uppercase">Kecamatan *</label>
-                                <select name="kecamatan" id="kecamatan" class="form-select rounded-3 border-0 bg-light p-3 fw-bold" required>
+                                <label class="form-label small fw-bold text-muted text-uppercase">Kecamatan <span class="text-danger">*</span></label>
+                                <select name="kecamatan" id="kecamatan" class="form-select rounded-3 border-0 bg-light p-3 fw-bold shadow-sm" required>
                                     <option value="">-- Pilih Kecamatan --</option>
-                                    @php
-                                        $kecamatans = ["Bancar", "Bangilan", "Grabagan", "Jatirogo", "Jenu", "Kenduruan", "Kerek", "Merakurak", "Montong", "Palang", "Parengan", "Plumpang", "Rengel", "Semanding", "Senori", "Singgahan", "Soko", "Tambakboyo", "Tuban", "Widang"];
-                                        sort($kecamatans);
-                                    @endphp
-                                    @foreach($kecamatans as $kec)
-                                        <option value="{{ $kec }}" {{ old('kecamatan') == $kec ? 'selected' : '' }}>{{ $kec }}</option>
+                                    @foreach(["Bancar", "Bangilan", "Grabagan", "Jatirogo", "Jenu", "Kenduruan", "Kerek", "Merakurak", "Montong", "Palang", "Parengan", "Plumpang", "Rengel", "Semanding", "Senori", "Singgahan", "Soko", "Tambakboyo", "Tuban", "Widang"] as $kec)
+                                        <option value="{{ $kec }}" {{ (old('kecamatan', $currentKec) == $kec) ? 'selected' : '' }}>{{ $kec }}</option>
                                     @endforeach
                                 </select>
                             </div>
-
                             <div class="mb-0">
-                                <label class="form-label small fw-bold text-muted text-uppercase">Desa / Kelurahan *</label>
-                                <select name="desa" id="desa" class="form-select rounded-3 border-0 bg-light p-3 fw-bold" required disabled>
+                                <label class="form-label small fw-bold text-muted text-uppercase">Desa / Kelurahan <span class="text-danger">*</span></label>
+                                <select name="desa" id="desa" class="form-select rounded-3 border-0 bg-light p-3 fw-bold shadow-sm" required>
                                     <option value="">-- Pilih Desa --</option>
                                 </select>
                             </div>
                         </div>
 
-                        {{-- CARD 3: WAKTU & FOTO --}}
-                        <div class="card border-0 shadow-sm rounded-4 p-4 mb-4 border-start border-4 border-warning">
-                            <h6 class="fw-bold mb-3 text-warning"><i class="fas fa-calendar-alt me-2"></i>Waktu & Dokumentasi</h6>
+                        <div class="card border-0 shadow-sm rounded-4 p-4 mb-4 border-start border-4 border-info">
+                            <h6 class="fw-bold mb-3 text-info"><i class="fas fa-calendar-check me-2"></i>Waktu & Foto</h6>
                             <div class="mb-3">
-                                <label class="form-label small fw-bold text-dark text-uppercase">Tanggal Pelaksanaan *</label>
-                                <input type="date" name="tanggal_pelaksanaan" class="form-control rounded-3 shadow-sm border-warning fw-bold" 
-                                       value="{{ old('tanggal_pelaksanaan') }}"
+                                <label class="form-label small fw-bold text-dark text-uppercase">Tanggal Pelaksanaan Lapangan <span class="text-danger">*</span></label>
+                                <input type="date" name="tanggal_pelaksanaan" id="tanggal_pelaksanaan" class="form-control rounded-3 shadow-sm border-info fw-bold" 
                                        min="{{ \Carbon\Carbon::parse($agenda->event_date)->format('Y-m-d') }}" 
-                                       max="{{ \Carbon\Carbon::parse($agenda->end_date)->format('Y-m-d') }}" required>
-                                <div class="form-text mt-2 text-muted" style="font-size: 0.7rem;">
-                                    <i class="fas fa-info-circle me-1"></i> Rentang ST: 
-                                    <strong>{{ \Carbon\Carbon::parse($agenda->event_date)->translatedFormat('d M') }} s/d {{ \Carbon\Carbon::parse($agenda->end_date)->translatedFormat('d M Y') }}</strong>
-                                </div>
+                                       max="{{ \Carbon\Carbon::parse($agenda->end_date)->format('Y-m-d') }}" 
+                                       value="{{ $valTanggal }}" required>
                             </div>
                             <div class="mb-0">
-                                <label class="form-label small fw-bold text-dark text-uppercase">Upload Foto Dokumentasi *</label>
-                                <input type="file" name="fotos[]" id="foto_upload" class="form-control rounded-3" accept="image/*" multiple required>
-                                <div id="preview-container" class="d-flex flex-wrap gap-2 mt-3"></div>
+                                {{-- BINTANG MERAH DITAMBAHKAN DISINI --}}
+                                <label class="form-label small fw-bold text-dark text-uppercase">Foto Dokumentasi <span class="text-danger">*</span></label>
+                                <input type="file" name="fotos[]" id="foto_upload" class="form-control" accept="image/*" multiple required>
+                                <div class="form-text text-danger fw-bold" style="font-size: 0.65rem;">
+                                    <i class="fas fa-info-circle me-1"></i> Format: JPG/PNG. Maksimal 10MB per foto.
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {{-- SISI KANAN: HASIL LAPORAN --}}
                     <div class="col-lg-7">
                         <div class="card border-0 shadow-sm rounded-4 p-4 h-100">
-                            <h6 class="fw-bold mb-4 border-bottom pb-2 text-dark text-uppercase" style="font-size: 0.75rem; letter-spacing: 1px;">
-                                <i class="fas fa-clipboard-check me-2 text-success"></i>Detail Hasil Pengawasan
-                            </h6>
+                            <h6 class="fw-bold mb-4 border-bottom pb-2 text-dark"><i class="fas fa-clipboard-check me-2 text-success"></i>Detail Hasil Pengawasan</h6>
                             
                             <div class="mb-4">
-                                <label class="form-label fw-bold small text-secondary">RESPONDEN / PETUGAS YANG DITEMUI *</label>
-                                <input type="text" name="responden" class="form-control rounded-3 bg-light border-0 p-3" 
-                                       value="{{ old('responden') }}" placeholder="Nama responden atau petugas lapangan..." required>
+                                <label class="form-label fw-bold small text-secondary">RESPONDEN / PETUGAS DITEMUI <span class="text-danger">*</span></label>
+                                <input type="text" name="responden" class="form-control rounded-3 bg-light border-0 p-3 shadow-sm" placeholder="Contoh: Bapak Ahmad" required value="{{ old('responden', $agenda->responden) }}">
                             </div>
 
                             <div class="mb-4">
-                                <label class="form-label fw-bold small text-secondary">AKTIVITAS YANG DILAKUKAN *</label>
-                                <textarea name="aktivitas" class="form-control rounded-3 bg-light border-0 p-3" rows="5" 
-                                          placeholder="Ceritakan detail kegiatan pengawasan..." required>{{ old('aktivitas') }}</textarea>
+                                <label class="form-label fw-bold small text-secondary">AKTIVITAS DILAKUKAN <span class="text-danger">*</span></label>
+                                <textarea name="aktivitas" class="form-control rounded-3 bg-light border-0 p-3 shadow-sm" rows="6" placeholder="Jelaskan aktivitas Anda..." required>{{ old('aktivitas', $agenda->aktivitas) }}</textarea>
                             </div>
 
                             <div class="mb-4">
-                                <label class="form-label fw-bold small text-secondary">PERMASALAHAN / TEMUAN *</label>
-                                <textarea name="permasalahan" class="form-control rounded-3 bg-light border-0 p-3" rows="3" 
-                                          placeholder="Kendala atau temuan di lokasi..." required>{{ old('permasalahan') }}</textarea>
+                                <label class="form-label fw-bold small text-secondary">PERMASALAHAN LAPANGAN <span class="text-danger">*</span></label>
+                                <textarea name="permasalahan" class="form-control rounded-3 bg-light border-0 p-3 shadow-sm" rows="3" placeholder="Kendala di lapangan..." required>{{ old('permasalahan', $agenda->permasalahan) }}</textarea>
                             </div>
 
                             <div class="mb-4">
-                                <label class="form-label fw-bold small text-success text-uppercase">Solusi / Tindak Lanjut *</label>
-                                <textarea name="solusi_antisipasi" class="form-control rounded-3 bg-light border-0 p-3" rows="3" 
-                                          placeholder="Tindakan yang diambil untuk mengatasi masalah..." required>{{ old('solusi_antisipasi') }}</textarea>
+                                <label class="form-label fw-bold small text-success text-uppercase">Solusi / Tindak Lanjut <span class="text-danger">*</span></label>
+                                <textarea name="solusi_antisipasi" class="form-control rounded-3 bg-light border-0 p-3 shadow-sm" rows="3" placeholder="Saran/Tindak lanjut..." required>{{ old('solusi_antisipasi', $agenda->solusi_antisipasi) }}</textarea>
                             </div>
 
                             <div class="d-flex justify-content-between align-items-center pt-3 border-top mt-auto">
                                 <a href="{{ route('task.index') }}" class="btn btn-light px-4 rounded-pill fw-bold text-muted">Batal</a>
-                                <button type="submit" class="btn btn-primary px-5 rounded-pill fw-bold shadow-lg py-2">
+                                <button type="submit" class="btn btn-bps-primary px-5 rounded-pill fw-bold shadow-lg">
                                     <i class="fas fa-paper-plane me-2"></i> Kirim Laporan
                                 </button>
                             </div>
@@ -144,7 +157,59 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+    const daftarCuti = @json($userCuti);
+    const laporanTerpakai = @json($laporanTerpakai);
+
+    document.getElementById('tanggal_pelaksanaan').addEventListener('change', function() {
+        const tglTerpilih = this.value; // Format: YYYY-MM-DD
+        
+        if (!tglTerpilih) return;
+
+        // --- A. LOGIKA CEK CUTI (DIPERKETAT) ---
+        let isCuti = false;
+        let rangeCutiText = "";
+
+        daftarCuti.forEach(range => {
+            // Pastikan format date-only (ambil 10 karakter pertama YYYY-MM-DD)
+            const start = range.start_date.substring(0, 10);
+            const end = range.end_date.substring(0, 10);
+
+            if (tglTerpilih >= start && tglTerpilih <= end) {
+                isCuti = true;
+                rangeCutiText = `${start} s.d ${end}`;
+            }
+        });
+
+        if (isCuti) {
+            Swal.fire({
+                title: 'Akses Ditolak!',
+                html: `Anda tidak bisa memilih tanggal <b>${tglTerpilih}</b> karena status Anda sedang <b>CUTI</b> pada periode ${rangeCutiText}.`,
+                icon: 'error',
+                confirmButtonColor: '#dc3545'
+            });
+            this.value = ''; // Kosongkan kembali
+            return; // Berhenti disini
+        }
+
+        // --- B. LOGIKA CEK TANGGAL SUDAH TERPAKAI ---
+        // Normalisasi array laporanTerpakai (ambil YYYY-MM-DD saja)
+        const cleanLaporanTerpakai = laporanTerpakai.map(tgl => tgl.substring(0, 10));
+
+        if (cleanLaporanTerpakai.includes(tglTerpilih)) {
+            Swal.fire({
+                title: 'Jadwal Bentrok!',
+                text: 'Tanggal tersebut sudah Anda gunakan untuk melaporkan penugasan lain. Silakan pilih tanggal pelaksanaan yang berbeda.',
+                icon: 'warning',
+                confirmButtonColor: '#f59e0b'
+            });
+            this.value = ''; // Kosongkan kembali
+            return;
+        }
+    });
+
+    // --- LOGIKA KECAMATAN & DESA (TETAP SAMA) ---
     const dataWilayah = {
         "Bancar": ["Bancar", "Banjarejo", "Bogorejo", "Bulujowo", "Demit", "Gandu", "Jatisari", "Karangrejo", "Kayen", "Luwihaji", "Margosuko", "Ngadipuro", "Ngujuran", "Pugoh", "Sembungin", "Sidotentrem", "Siruar", "Sukasari", "Sumberan", "Tlogoagung", "Tengger Kulon", "Tengger Wetan"],
         "Bangilan": ["Bangilan", "Banjarworo", "Bate", "Bedukan", "Kumpulrejo", "Ngroto", "Sidokumpul", "Sidotentrem", "Sidorejo", "Soto", "Wedi", "Klakeh", "Kebonagung", "Wediyani"],
@@ -158,23 +223,21 @@
         "Palang": ["Palang", "Cendoro", "Cepokorejo", "Dawung", "Glagahwaru", "Karangagung", "Ketambul", "Kradenan", "Leran Kulon", "Leran Wetan", "Ngimbang", "Panyuran", "Sumurgung", "Tegalbang", "Tasikmadu", "Waru"],
         "Parengan": ["Parengan", "Brangkal", "Cengkong", "Dagangan", "Kemlaten", "Kumpulrejo", "Mergoasri", "Mojoagung", "Mulyoagung", "Mulyorejo", "Ngawun", "Pacing", "Parangbatu", "Selogabus", "Sembung", "Suciharjo", "Sugihwaras", "Sukorejo", "Tinggahan"],
         "Plumpang": ["Plumpang", "Bandungrejo", "Cangkring", "Kebomlati", "Kecapi", "Kedungasri", "Kedungrejo", "Kedungsoko", "Kepohagung", "Klapadyangan", "Magersari", "Ngadipuro", "Panyuran", "Penidon", "Plandirejo", "Sembungrejo", "Sumberejo", "Trutup"],
-        "Rengel": ["Rengel", "Banjaragung", "Bulurejo", "Campurejo", "Kanor Kulon", "Karangtinoto", "Kebonagung", "Maibit", "Ngadirejo", "Pekuwon", "Prambontergayang", "Punggulrejo", "Sawahan", "Sumberejo", "Tambakharjo"],
-        "Semanding": ["Semanding", "Bejagung", "Genaharjo", "Gesing", "Jadi", "Karang", "Kowang", "Ngino", "Penambangan", "Prunggahan Kulon", "Prunggahan Wetan", "Sambongrejo", "Tegalagung", "Tunah"],
+        "Rengel": ["Rengel", "Banjaragung", "Bulurejo", "Campurejo", "Kanor Kulon", "Karangtinoto", "Kebonagung", "Maibit", "Ngadirejo", "Pekuwon", "Prambontergayang", "Punggulrejo", "Rengel", "Sawahan", "Sumberejo", "Tambakharjo"],
+        "Semanding": ["Semanding", "Bejagung", "Genaharjo", "Gesing", "Jadi", "Karang", "Kowang", "Ngino", "Penambangan", "Prunggahan Kulon", "Prunggahan Wetan", "Sambongrejo", "Semanding", "Tegalagung", "Tunah"],
         "Senori": ["Senori", "Banyuurip", "Jatisari", "Kaligede", "Kerep", "Leran", "Meduri", "Rayung", "Sendang", "Sidoharjo", "Wanglukulon", "Wangluwetan"],
         "Singgahan": ["Singgahan", "Binangun", "Lajo Kidul", "Lajo Lor", "Mulyoasri", "Mulyorejo", "Ngawun", "Saren", "Tanjungrejo", "Tingkis", "Tunggulrejo"],
         "Soko": ["Soko", "Bangunrejo", "Cekalang", "Glodog", "Jati", "Jegulo", "Kandangan", "Kenongosari", "Klumpit", "Menilo", "Nguruan", "Pandansari", "Pandanagung", "Prambontergayang", "Sandingrowo", "Simo", "Soko", "Tandun", "Tlogowaru"],
-        "Tambakboyo": ["Tambakboyo", "Belikanget", "Cokrowati", "Dikir", "Gadun", "Kalisari", "Kenanti", "Klutuk", "Mabulur", "Nguluhan", "Pabeyan", "Plajan", "Pulogede", "Sawir", "Sotang", "Sukoharjo"],
-        "Tuban": ["Banyuurip", "Doromukti", "Gedongombo", "Karang", "Karangsari", "Kebonsari", "Kutorejo", "Latsari", "Mondokan", "Panyuran", "Perbon", "Ronggomulyo", "Sendangharjo", "Sidomulyo", "Sukolilo", "Sugihwaras", "Sumurgung"],
+        "Tambakboyo": ["Tambakboyo", "Belikanget", "Cokrowati", "Dikir", "Gadun", "Kalisari", "Kenanti", "Klutuk", "Mabulur", "Nguluhan", "Pabeyan", "Plajan", "Pulogede", "Sawir", "Sotang", "Sukoharjo", "Tambakboyo"],
+        "Tuban": ["Banyuurip", "Doromukti", "Gedongombo", "Karang", "Karangsari", "Kebonsari", "Kutorejo", "Latsari", "Mondokan", "Panyuran", "Perbon", "Ronggomulyo", "Sendangharjo", "Sidomulyo", "Sukolilo", "Sukolilo", "Sugihwaras", "Sumurgung"],
         "Widang": ["Widang", "Banjar", "Bunut", "Kompang", "Mulyorejo", "Ngadirejo", "Ngadipuro", "Patihan", "Simorejo", "Sumberejo", "Tegalrejo", "Tegalsari", "Widang"]
     };
 
     const kecSelect = document.getElementById('kecamatan');
     const desaSelect = document.getElementById('desa');
-    const fotoUpload = document.getElementById('foto_upload');
-    const previewContainer = document.getElementById('preview-container');
+    const initialDesa = @json(old('desa', $currentDesa));
 
-    kecSelect.addEventListener('change', function() {
-        const selectedKec = this.value;
+    function updateDesaOptions(selectedKec, preselectDesa = '') {
         desaSelect.innerHTML = '<option value="">-- Pilih Desa --</option>';
         if (selectedKec && dataWilayah[selectedKec]) {
             desaSelect.disabled = false;
@@ -182,41 +245,15 @@
                 const option = document.createElement('option');
                 option.value = desa;
                 option.text = desa;
+                if (preselectDesa === desa) { option.selected = true; }
                 desaSelect.add(option);
             });
         } else {
             desaSelect.disabled = true;
         }
-    });
-
-    // Preview Foto
-    fotoUpload.addEventListener('change', function() {
-        previewContainer.innerHTML = '';
-        const files = Array.from(this.files);
-        files.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const img = document.createElement('img');
-                img.src = e.target.result;
-                img.style.width = '80px';
-                img.style.height = '80px';
-                img.style.objectFit = 'cover';
-                img.classList.add('rounded-3', 'border', 'shadow-sm');
-                previewContainer.appendChild(img);
-            }
-            reader.readAsDataURL(file);
-        });
-    });
-</script>
-
-<style>
-    .form-select, .form-control { border: 1px solid #e2e8f0; transition: 0.3s; }
-    .form-control:focus, .form-select:focus { 
-        border-color: #0058a8; 
-        box-shadow: 0 0 0 0.25rem rgba(0, 88, 168, 0.1); 
-        background-color: #fff !important;
     }
-    .btn-primary { background: linear-gradient(135deg, #0058a8 0%, #007bff 100%); border: none; }
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0, 88, 168, 0.3); }
-</style>
+
+    if (kecSelect.value) { updateDesaOptions(kecSelect.value, initialDesa); }
+    kecSelect.addEventListener('change', function() { updateDesaOptions(this.value); });
+</script>
 @endsection

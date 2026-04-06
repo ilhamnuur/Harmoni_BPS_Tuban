@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-// Perbaikan pada baris di bawah ini:
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -10,11 +9,13 @@ class Agenda extends Model
 {
     use HasFactory;
 
+    // Karena guarded cuma 'id', kolom baru (report_target, mode_surat, dll) otomatis aman
     protected $guarded = ['id'];
 
     protected $casts = [
         'event_date' => 'date',
         'end_date'   => 'date',
+        'approved_at' => 'datetime', // Tambahkan cast untuk timestamp approval
     ];
 
     /**
@@ -31,6 +32,24 @@ class Agenda extends Model
     public function assignee()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * Relasi ke Pejabat Penandatangan (Approver)
+     * Tambahkan ini untuk fitur Generator Surat
+     */
+    public function approver()
+    {
+        return $this->belongsTo(User::class, 'approver_id');
+    }
+
+    /**
+     * Relasi ke Banyak Laporan (Multi-Translok)
+     * Tambahkan ini karena 1 ST bisa banyak laporan
+     */
+    public function reports()
+    {
+        return $this->hasMany(AssignmentReport::class, 'agenda_id');
     }
 
     /**
@@ -72,22 +91,13 @@ class Agenda extends Model
 
     public function team()
     {
-        return $this->hasOneThrough(
-            Team::class, 
-            User::class, 
-            'id',          
-            'id',          
-            'assigned_to', 
-            'team_id'      
-        );
+        // Ganti hasOneThrough menjadi belongsTo
+        return $this->belongsTo(Team::class, 'team_id');
     }
 
     public function presensi()
     {
-        // Relasi ke tabel meeting_presences (Daftar Hadir)
-        // Kita gunakan hasOne karena satu baris agenda (per orang) punya satu tanda tangan
         return $this->hasOne(MeetingPresence::class, 'agenda_id', 'id')
                     ->where('user_id', $this->assigned_to);
     }
-
 }

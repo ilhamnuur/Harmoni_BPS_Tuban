@@ -13,7 +13,8 @@
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body p-4 p-md-5">
                     
-                    <form action="{{ route('profile.update') }}" method="POST">
+                    {{-- DITAMBAHKAN enctype UNTUK UPLOAD FILE --}}
+                    <form action="{{ route('profile.update') }}" method="POST" enctype="multipart/form-data">
                         @csrf
                         @method('PUT')
 
@@ -37,6 +38,28 @@
                                            value="{{ old('username', $user->username) }}" required>
                                     @error('username') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                 </div>
+
+                                {{-- FITUR BARU: UPLOAD TTD DIGITAL (KHUSUS KEPALA/KATIM) --}}
+                                @if(in_array($user->role, ['Kepala', 'Katim']))
+                                <div class="mb-4 p-3 border rounded-4 bg-white shadow-xs">
+                                    <label class="small fw-bold mb-2 d-block text-dark">
+                                        <i class="fas fa-pen-nib me-1 text-primary"></i> Tanda Tangan Digital
+                                    </label>
+                                    
+                                    @if($user->signature)
+                                        <div class="mb-3 p-2 border rounded bg-light text-center">
+                                            <img src="{{ asset('storage/' . $user->signature) }}" alt="TTD Digital" style="max-height: 80px; width: auto;">
+                                            <p class="text-muted mt-1 mb-0" style="font-size: 0.65rem;">Tanda tangan aktif saat ini</p>
+                                        </div>
+                                    @endif
+
+                                    <input type="file" name="signature" class="form-control form-control-sm rounded-3 @error('signature') is-invalid @enderror" accept="image/png">
+                                    <div class="form-text text-muted" style="font-size: 0.65rem;">
+                                        Format: <b>PNG Transparan</b> (Max 2MB). Digunakan untuk cetak dokumen rapat.
+                                    </div>
+                                    @error('signature') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                </div>
+                                @endif
 
                                 <h6 class="fw-bold text-dark mb-3 mt-4 border-bottom pb-2">
                                     <i class="fas fa-key me-2 text-warning"></i>Keamanan
@@ -84,11 +107,6 @@
                                                     style="width: 40px; height: 20px; cursor: pointer;">
                                             </div>
                                         </div>
-                                        @if($user->has_super_access)
-                                            <div class="mt-2 text-danger small fw-bold">
-                                                <i class="fas fa-info-circle me-1"></i> Mode Monitoring aktif. Anda memiliki akses menu Akses Super.
-                                            </div>
-                                        @endif
                                     @else
                                         <input type="hidden" name="has_super_access" value="1">
                                     @endif
@@ -114,7 +132,6 @@
                                             </div>
 
                                         @elseif(($user->role === 'Katim' || $user->role === 'Kepala') || ($user->has_super_access == 1 && in_array($user->username, ['kepala.bps', 'ketua.tim', 'dodik.hendarto', 'respati.yekti', 'umdatul.ummah', 'ika.rahmawati', 'arif.suroso', 'triana.puji', 'yudhi.prasetyono', 'wicaksono'])))
-                                            {{-- PEJABAT ASLI: MUNCUL PILIHAN BALIK KE KATIM/KEPALA --}}
                                             @php 
                                                 $originalRole = ($user->team_id == 8) ? 'Kepala' : 'Katim'; 
                                                 $displayRole = ($user->role == 'Pegawai') ? $originalRole : $user->role;
@@ -150,7 +167,6 @@
                                                 </label>
                                             </div>
                                         @else
-                                            {{-- PEGAWAI MURNI (ILHAM DLL): TERKUNCI --}}
                                             <div class="p-3 border rounded-4 bg-light shadow-sm">
                                                 <div class="d-flex align-items-center">
                                                     <div class="icon-box me-3 bg-secondary bg-opacity-10 text-secondary rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">

@@ -77,32 +77,40 @@ class AbsensiController extends Controller
     }
 
     public function absensiStore(Request $request)
-    {
-        if (!$this->isSubbagUmum(Auth::user())) {
-            return redirect()->back()->with('error', 'Akses ditolak.');
-        }
+{
+    if (!$this->isSubbagUmum(\Auth::user())) {
+        return redirect()->back()->with('error', 'Akses ditolak.');
+    }
 
-        $request->validate([
-            'user_id'    => 'required|exists:users,id',
-            'start_date' => 'required|date',
-            'end_date'   => 'required|date|after_or_equal:start_date',
-            'status'     => 'required|in:Cuti,DL,Izin,Sakit',
-            'keterangan' => 'nullable|string|max:255'
-        ]);
+    // Validasi disesuaikan dengan simbol baru (CT, CST1, PD)
+    $request->validate([
+        'user_id'    => 'required|exists:users,id',
+        'start_date' => 'required|date',
+        'end_date'   => 'required|date|after_or_equal:start_date',
+        'status'     => 'required|in:CT,CST1,PD', // Harus sesuai dengan value di modal/excel
+        'keterangan' => 'nullable|string|max:255'
+    ], [
+        'status.in' => 'Status harus berupa CT, CST1, atau PD.'
+    ]);
 
-        Absensi::create([
+    try {
+        \App\Models\Absensi::create([
             'user_id'    => $request->user_id,
             'start_date' => $request->start_date,
             'end_date'   => $request->end_date,
-            'status'     => $request->status,
+            'status'     => $request->status, // Menyimpan CT/CST1/PD
             'keterangan' => $request->keterangan,
-            'input_by'   => Auth::id(),
+            'input_by'   => \Auth::id(),
         ]);
 
-        return redirect()->back()->with('success', 'Data berhasil disimpan!');
+        return redirect()->back()->with('success', 'Data kehadiran berhasil disimpan!');
+        
+    } catch (\Exception $e) {
+        return redirect()->back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
     }
+}
 
-  public function absensiImport(Request $request)
+ public function absensiImport(Request $request)
 {
     if (!$this->isSubbagUmum(\Auth::user())) {
         return redirect()->back()->with('error', 'Akses ditolak.');
@@ -122,30 +130,23 @@ class AbsensiController extends Controller
 
         \DB::beginTransaction();
 
-        // Kita mulai looping dari index 9 (Baris ke-10 di Excel)
-        // Karena kamu bilang data NIP angka baru mulai di baris 10
         foreach ($dataArray as $index => $row) {
-            // Lewati baris sebelum baris ke-10 (index 0 sampai 8)
+            // Kita mulai looping dari index 9 (Baris ke-10 di Excel)
             if ($index < 9) continue;
 
-            // Kolom A (Index 0) adalah NIP
             $rawNip = trim($row[0] ?? '');
             
-            // Jika kolom NIP kosong atau isinya bukan angka (seperti header tambahan), lewati
             if (empty($rawNip) || strlen(preg_replace('/[^0-9]/', '', $rawNip)) < 5) {
                 continue;
             }
 
-            // --- KONVERSI NIP (Handle Scientific 1,97E+17) ---
             if (str_contains(strtoupper($rawNip), 'E+')) {
                 $nipFull = (string) sprintf("%.0f", (float) str_replace(',', '.', $rawNip));
             } else {
                 $nipFull = preg_replace('/[^0-9]/', '', $rawNip);
             }
 
-            // Ambil 9 digit depan saja untuk pencocokan aman
             $nip9Digit = substr($nipFull, 0, 9);
-
             $user = $users->first(function($u) use ($nip9Digit) {
                 $cleanDbNip = preg_replace('/[^0-9]/', '', $u->nip);
                 return str_starts_with($cleanDbNip, $nip9Digit);
@@ -153,33 +154,32 @@ class AbsensiController extends Controller
 
             if (!$user) continue;
 
-            // --- PROSES TANGGAL (Mulai dari Kolom C / Index 2) ---
+            // --- PROSES TANGGAL ---
             for ($tgl = 1; $tgl <= 31; $tgl++) {
-                $colIdx = $tgl + 1; // Tanggal 1 = Index 2 (Kolom C), Tanggal 2 = Index 3, dst.
+                $colIdx = $tgl + 1; // Tanggal 1 = Index 2 (Kolom C)
                 
                 if (!isset($row[$colIdx])) break;
 
                 $isiSel = trim($row[$colIdx]);
                 if (empty($isiSel)) continue;
 
-                // Ambil status (baris terakhir di sel tersebut)
+                // Pecah isi sel (handle jika ada line break)
                 $lines = preg_split('/\r\n|\r|\n/', $isiSel);
                 $statusRaw = strtoupper(trim(end($lines)));
 
+                // --- PERBAIKAN MAPPER STATUS (SESUAI EXCEL & TIMELINE) ---
+                // Kita simpan status kodenya saja agar sinkron dengan CSS .status-pd dll
                 $statusMap = [
-                    'CT'  => 'Cuti', 
-                    'CT1' => 'CT1', 
-                    'PD'  => 'DL', 
-                    'DL'  => 'DL', 
-                    'S'   => 'Sakit', 
-                    'I'   => 'Izin', 
-                    'M'   => 'Izin'
+                    'CT'   => 'CT',   // Cuti Full
+                    'CST1' => 'CST1', // Cuti Setengah Hari
+                    'CT1'  => 'CST1', // Antisipasi jika di excel tulisannya CT1
+                    'PD'   => 'PD',   // Perjalanan Dinas
+                    'DL'   => 'PD',   // Antisipasi jika masih ada tulisan DL
                 ];
 
                 if (isset($statusMap[$statusRaw])) {
                     $tanggalStr = $request->year_month . '-' . sprintf('%02d', $tgl);
                     
-                    // Validasi tanggal asli
                     $y = (int)substr($request->year_month, 0, 4);
                     $m = (int)substr($request->year_month, 5, 2);
 
@@ -191,8 +191,8 @@ class AbsensiController extends Controller
                                 'end_date'   => $tanggalStr,
                             ],
                             [
-                                'status'     => $statusMap[$statusRaw],
-                                'keterangan' => 'Import BPS: ' . $statusRaw,
+                                'status'     => $statusMap[$statusRaw], // Menyimpan CT, CST1, atau PD
+                                'keterangan' => 'Import Presensi: ' . $statusRaw,
                                 'input_by'   => \Auth::id(),
                             ]
                         );
@@ -203,13 +203,24 @@ class AbsensiController extends Controller
         }
 
         \DB::commit();
-        return redirect()->back()->with('success', "Berhasil sinkronisasi $count data berhalangan hadir.");
+        return redirect()->back()->with('success', "Berhasil sinkronisasi $count data (PD/CT/CST1).");
 
     } catch (\Exception $e) {
         \DB::rollback();
         return redirect()->back()->with('error', 'Gagal: ' . $e->getMessage());
     }
 }
+
+        public function update(Request $request, $id) {
+            $absence = Absensi::findOrFail($id);
+            $absence->update($request->all());
+            return redirect()->back()->with('success', 'Data berhasil diupdate');
+        }
+
+        public function destroy($id) {
+            Absensi::findOrFail($id)->delete();
+            return redirect()->back()->with('success', 'Data berhasil dihapus');
+        }
 
     private function isSubbagUmum($user): bool
     {

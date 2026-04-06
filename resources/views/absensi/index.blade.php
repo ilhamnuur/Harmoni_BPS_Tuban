@@ -24,19 +24,19 @@
     .is-today { background-color: #eff6ff !important; color: var(--bps-blue) !important; border-bottom: 3px solid var(--bps-blue) !important; }
 
     .leave-bar {
-        height: 26px; width: 26px; border-radius: 7px; display: flex; align-items: center; 
-        justify-content: center; font-size: 0.75rem; font-weight: 800; color: white;
+        height: 26px; width: 32px; border-radius: 7px; display: flex; align-items: center; 
+        justify-content: center; font-size: 0.6rem; font-weight: 800; color: white;
         margin: 0 auto; cursor: pointer; transition: 0.2s;
+        position: relative; z-index: 5;
     }
+    .leave-bar:hover { transform: scale(1.2); filter: brightness(1.1); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
 
-    .status-cuti { background: #ef4444 !important; }
-    .status-ct1 { background: #f43f5e !important; } /* Warna khusus CT1 */
-    .status-dl { background: #f59e0b !important; }
-    .status-izin { background: #6366f1 !important; }
-    .status-sakit { background: #10b981 !important; }
+    /* Mapping Warna Status Sesuai Excel */
+    .status-ct { background: #ef4444 !important; }    /* Merah */
+    .status-cst1 { background: #f43f5e !important; }  /* Pink/Rose */
+    .status-pd { background: #f59e0b !important; }    /* Kuning */
 
     .filter-active { background: var(--bps-blue) !important; color: white !important; }
-    
     .btn-import { background: #2ecc71; color: white; border: none; font-weight: bold; border-radius: 50px; padding: 8px 20px; transition: 0.3s; }
     .btn-import:hover { background: #27ae60; color: white; transform: translateY(-2px); }
 </style>
@@ -46,7 +46,7 @@
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3 mt-3">
         <div>
             <h4 class="fw-bold text-dark mb-1">Timeline Kehadiran Pegawai</h4>
-            <p class="text-muted small mb-0">Sub Bagian Umum &bull; Gatekeeper Penugasan Lapangan</p>
+            <p class="text-muted small mb-0">Sub Bagian Umum &bull; Simbol: PD (Dinas), CT (Cuti), CST1 (Cuti 1/2 Hari)</p>
         </div>
         <div class="d-flex gap-2">
             <button type="button" class="btn-import shadow-sm" data-bs-toggle="modal" data-bs-target="#modalImportCSV">
@@ -122,10 +122,17 @@
                             @endphp
                             <td class="date-cell {{ $date->isWeekend() ? 'is-weekend' : '' }} {{ $date->isToday() ? 'is-today' : '' }}">
                                 @if($statusDate)
-                                    <div class="leave-bar status-{{ strtolower(trim($statusDate->status)) }}" 
+                                    @php $cleanStatus = strtolower(trim($statusDate->status)); @endphp
+                                    <div class="leave-bar status-{{ $cleanStatus }} btn-edit-absensi" 
+                                         data-id="{{ $statusDate->id }}"
+                                         data-user-id="{{ $user->id }}"
+                                         data-start="{{ $statusDate->start_date }}"
+                                         data-end="{{ $statusDate->end_date }}"
+                                         data-status="{{ $statusDate->status }}"
+                                         data-ket="{{ $statusDate->keterangan }}"
                                          data-bs-toggle="tooltip"
                                          title="{{ $statusDate->status }}: {{ $statusDate->keterangan ?? 'Tanpa keterangan' }}">
-                                        {{ strtoupper(substr($statusDate->status, 0, 1)) }}
+                                        {{ strtoupper($statusDate->status) }}
                                     </div>
                                 @endif
                             </td>
@@ -138,15 +145,14 @@
     </div>
 </div>
 
-{{-- MODAL IMPORT CSV (FIXED SUBMIT) --}}
+{{-- MODAL IMPORT --}}
 <div class="modal fade" id="modalImportCSV" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4">
             <div class="modal-header border-0 pb-0">
-                <h5 class="fw-bold"><i class="fas fa-file-csv me-2 text-success"></i>Sinkronisasi Presensi BPS</h5>
+                <h5 class="fw-bold"><i class="fas fa-file-csv me-2 text-success"></i>Sinkronisasi Presensi</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            {{-- PASTIKAN ACTION DAN METHOD BENAR --}}
             <form action="{{ route('absensi.import') }}" method="POST" enctype="multipart/form-data">
                 @csrf
                 <div class="modal-body">
@@ -156,12 +162,10 @@
                     </div>
                     <div class="mb-0">
                         <label class="form-label small fw-bold">File Presensi (.csv atau .xlsx)</label>
-                        {{-- NAME HARUS 'file_import' SESUAI CONTROLLER --}}
                         <input type="file" name="file_import" class="form-control rounded-3" accept=".csv, .xlsx, .xls" required>
                     </div>
                 </div>
                 <div class="modal-footer border-0 pt-0">
-                    {{-- TYPE HARUS SUBMIT --}}
                     <button type="submit" class="btn btn-success rounded-pill px-4 w-100 fw-bold shadow">
                         <i class="fas fa-sync me-2"></i>Mulai Sinkronisasi
                     </button>
@@ -171,20 +175,21 @@
     </div>
 </div>
 
-{{-- MODAL INPUT MANUAL --}}
+{{-- MODAL INPUT/EDIT --}}
 <div class="modal fade" id="modalInputAbsensi" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4">
             <div class="modal-header border-0 pb-0">
-                <h5 class="fw-bold"><i class="fas fa-user-edit me-2 text-primary"></i>Input Manual</h5>
+                <h5 class="fw-bold" id="modalTitle"><i class="fas fa-user-edit me-2 text-primary"></i>Input Manual</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ route('absensi.store') }}" method="POST">
+            <form id="formAbsensi" action="{{ route('absensi.store') }}" method="POST">
                 @csrf
+                <div id="methodField"></div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Pilih Pegawai</label>
-                        <select name="user_id" class="form-select rounded-3 shadow-sm" required>
+                        <select name="user_id" id="edit_user_id" class="form-select rounded-3 shadow-sm" required>
                             <option value="">-- Pilih Nama --</option>
                             @foreach($users as $u)
                                 <option value="{{ $u->id }}">{{ $u->nama_lengkap }}</option>
@@ -194,52 +199,119 @@
                     <div class="row">
                         <div class="col-6 mb-3">
                             <label class="form-label small fw-bold">Mulai</label>
-                            <input type="date" name="start_date" class="form-control rounded-3 shadow-sm" value="{{ date('Y-m-d') }}" required>
+                            <input type="date" name="start_date" id="edit_start_date" class="form-control rounded-3 shadow-sm" required>
                         </div>
                         <div class="col-6 mb-3">
                             <label class="form-label small fw-bold">Sampai</label>
-                            <input type="date" name="end_date" class="form-control rounded-3 shadow-sm" value="{{ date('Y-m-d') }}" required>
+                            <input type="date" name="end_date" id="edit_end_date" class="form-control rounded-3 shadow-sm" required>
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-bold">Status</label>
-                        <select name="status" class="form-select rounded-3 shadow-sm" required>
-                            <option value="Cuti">Cuti</option>
-                            <option value="CT1">Cuti Setengah Hari</option>
-                            <option value="DL">Dinas Luar (DL)</option>
-                            <option value="Izin">Izin</option>
-                            <option value="Sakit">Sakit</option>
+                        <select name="status" id="edit_status" class="form-select rounded-3 shadow-sm" required>
+                            <option value="CT">CT (Cuti Full)</option>
+                            <option value="CST1">CST1 (Cuti Setengah Hari)</option>
+                            <option value="PD">PD (Perjalanan Dinas)</option>
                         </select>
                     </div>
                     <div class="mb-0">
                         <label class="form-label small fw-bold">Keterangan</label>
-                        <textarea name="keterangan" class="form-control rounded-3 shadow-sm" rows="2"></textarea>
+                        <textarea name="keterangan" id="edit_keterangan" class="form-control rounded-3 shadow-sm" rows="2"></textarea>
                     </div>
                 </div>
-                <div class="modal-footer border-0 pt-0">
+                <div class="modal-footer border-0 pt-0 d-flex flex-column gap-2">
                     <button type="submit" class="btn btn-primary rounded-pill px-4 w-100 fw-bold shadow">
-                        <i class="fas fa-save me-2"></i>Simpan
+                        <i class="fas fa-save me-2"></i>Simpan Data
+                    </button>
+                    <button type="button" id="btnDeleteAbsensi" class="btn btn-link text-danger text-decoration-none fw-bold w-100 d-none">
+                        <i class="fas fa-trash-alt me-1"></i> Hapus Data Ini
                     </button>
                 </div>
+            </form>
+            <form id="formDelete" action="" method="POST" class="d-none">
+                @csrf
+                @method('DELETE')
             </form>
         </div>
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Init Tooltip
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
             return new bootstrap.Tooltip(tooltipTriggerEl)
         });
 
-        const btnFilter = document.getElementById('btnFilterCuti');
-        btnFilter.addEventListener('click', function() {
-            this.classList.toggle('filter-active');
-            const isFiltering = this.classList.contains('filter-active');
-            document.querySelectorAll('.pegawai-row').forEach(row => {
-                row.style.display = isFiltering ? (row.getAttribute('data-has-leave') === 'true' ? '' : 'none') : '';
+        const modalAbsensi = new bootstrap.Modal(document.getElementById('modalInputAbsensi'));
+        const formAbsensi = document.getElementById('formAbsensi');
+        const methodField = document.getElementById('methodField');
+        const btnDelete = document.getElementById('btnDeleteAbsensi');
+        const formDelete = document.getElementById('formDelete');
+
+        // Filter Berhalangan
+        $('#btnFilterCuti').on('click', function() {
+            $(this).toggleClass('filter-active');
+            const isFiltering = $(this).hasClass('filter-active');
+            $('.pegawai-row').each(function() {
+                const hasLeave = $(this).data('has-leave') === true;
+                if (isFiltering) {
+                    $(this).toggle(hasLeave);
+                } else {
+                    $(this).show();
+                }
             });
+        });
+
+        // Edit Klik Bar
+        $(document).on('click', '.btn-edit-absensi', function() {
+            const data = $(this).data();
+            const id = data.id;
+
+            $('#modalTitle').html('<i class="fas fa-edit me-2 text-warning"></i>Edit Data Kehadiran');
+            let updateUrl = "{{ route('absensi.update', ':id') }}";
+            formAbsensi.action = updateUrl.replace(':id', id);
+            methodField.innerHTML = '@method("PUT")';
+
+            $('#edit_user_id').val(data.userId);
+            $('#edit_start_date').val(data.startDate || data.start);
+            $('#edit_end_date').val(data.endDate || data.end);
+            $('#edit_status').val(data.status);
+            $('#edit_keterangan').val(data.ket);
+
+            btnDelete.classList.remove('d-none');
+            btnDelete.dataset.id = id;
+            modalAbsensi.show();
+        });
+
+        // Delete Handle
+        btnDelete.addEventListener('click', function() {
+            const id = this.dataset.id;
+            Swal.fire({
+                title: 'Hapus Data?',
+                text: "Data ini akan dihapus permanen!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                confirmButtonText: 'Ya, Hapus!'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    let deleteUrl = "{{ route('absensi.destroy', ':id') }}";
+                    formDelete.action = deleteUrl.replace(':id', id);
+                    formDelete.submit();
+                }
+            });
+        });
+
+        // Reset for New Input
+        $('[data-bs-target="#modalInputAbsensi"]').on('click', function() {
+            $('#modalTitle').html('<i class="fas fa-user-edit me-2 text-primary"></i>Input Manual');
+            formAbsensi.action = "{{ route('absensi.store') }}";
+            methodField.innerHTML = '';
+            formAbsensi.reset();
+            btnDelete.classList.add('d-none');
         });
     });
 </script>

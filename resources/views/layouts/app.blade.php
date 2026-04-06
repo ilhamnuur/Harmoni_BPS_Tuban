@@ -157,10 +157,36 @@
         {{-- SECTION: PENUGASAN --}}
         @if(Auth::user()->role == 'Kepala' || Auth::user()->role == 'Katim')
             <div class="menu-divider">Perencanaan</div>
-            <a href="{{ route('assignment.index') }}" class="nav-link {{ request()->routeIs('assignment.*') ? 'active' : '' }}">
+            <a href="{{ route('assignment.index') }}" class="nav-link {{ request()->routeIs('assignment.index') ? 'active' : '' }}">
                 <i class="fas fa-clipboard-list me-2"></i> <span>Assignment</span>
             </a>
-        @endif
+
+            <a href="{{ route('assignment.approvals.index') }}" class="nav-link {{ request()->routeIs('assignment.approvals.*') ? 'active' : '' }}">
+                <i class="fas fa-file-signature me-2"></i> 
+                <span>Persetujuan SPT</span>
+                
+                @php
+                    $notifApproval = \App\Models\Agenda::where('mode_surat', 'generate')
+                        ->where('status_approval', 'Pending')
+                        ->where(function($q) {
+                            $q->where('approver_id', Auth::id())
+                            ->orWhere('reviewer_id', Auth::id());
+                        });
+
+                    if (Auth::user()->role === 'Kepala') {
+                        $notifApproval->whereNotNull('reviewed_at');
+                    } elseif (Auth::user()->role === 'Katim') {
+                        $notifApproval->whereNull('reviewed_at');
+                    }
+
+                    $countNotif = $notifApproval->distinct('title')->count('title');
+                @endphp
+
+                @if($countNotif > 0)
+                    <span class="badge bg-danger rounded-pill badge-notif">{{ $countNotif }}</span>
+                @endif
+            </a>
+        @endif {{-- <--- INI YANG TADI KURANG, Mail! --}}
 
         {{-- SECTION: USER MANAGEMENT --}}
         @if(Auth::user()->role == 'Admin' || Auth::user()->role == 'Kepala')
