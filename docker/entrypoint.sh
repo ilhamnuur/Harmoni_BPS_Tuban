@@ -8,6 +8,10 @@ set -e
 echo "Clearing Bootstrap Cache..."
 rm -f bootstrap/cache/*.php
 
+# Fix permissions for storage and cache
+echo "Fixing Permissions..."
+chown -R www-data:www-data storage bootstrap/cache
+
 # Generate application key if APP_KEY is empty
 if [ -z "$APP_KEY" ]; then
     echo "Generating Application Key..."
@@ -21,7 +25,9 @@ php artisan storage:link --no-interaction
 
 # Run migrations
 echo "Running Migrations..."
-php artisan migrate --force --no-interaction
+if ! php artisan migrate --force --no-interaction; then
+    echo "WARNING: Migrations failed. Continuing anyway..."
+fi
 
 # Optimizing Laravel
 echo "Optimizing Application..."
